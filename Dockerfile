@@ -1,20 +1,13 @@
-FROM php:8.2-apache
+FROM php:8.1-apache
 
 
-RUN rm -f /etc/apache2/mods-enabled/mpm_*
+COPY . /var/www/html/
 
-# Aktifkan hanya prefork
-RUN a2enmod mpm_prefork
 
-# Enable rewrite 
-RUN a2enmod rewrite
+RUN chown -R www-data:www-data /var/www/html/data && chmod -R 755 /var/www/html/data
 
-# Copy project
-COPY . /var/www/html
 
-# Set permission
-RUN chown -R www-data:www-data /var/www/html
+RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-EXPOSE 80
 
 CMD ["apache2-foreground"]
