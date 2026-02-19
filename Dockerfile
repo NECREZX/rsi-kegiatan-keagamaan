@@ -1,18 +1,15 @@
-FROM php:8.1-apache
+FROM php:8.1-cli
 
 
-COPY . /var/www/html/
+RUN apt-get update && apt-get install -y libzip-dev zip \
+    && docker-php-ext-install zip
 
 
-RUN mkdir -p /var/www/html/data \
-    && chown -R www-data:www-data /var/www/html/data \
-    && chmod -R 775 /var/www/html/data
+COPY . /usr/src/myapp
+WORKDIR /usr/src/myapp
 
 
-RUN rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.*
+RUN mkdir -p data && chown -R www-data:www-data data && chmod -R 775 data
 
 
-RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
-
-
-ENTRYPOINT ["/bin/sh", "-c", "ln -sf /etc/apache2/mods-available/mpm_prefork.* /etc/apache2/mods-enabled/ && apache2-foreground"]
+CMD ["sh", "-c", "php -S 0.0.0.0:${PORT}"]
