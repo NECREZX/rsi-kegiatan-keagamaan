@@ -130,16 +130,7 @@ function renderKelolaPegawai() {
       </div>
       <div class="tbl-wrap">
         <table class="tbl">
-          <thead><tr>
-            <th>No</th>
-            <th>Nama</th>
-            <th class="hide-mobile">NIK</th>
-            <th class="hide-mobile">Status</th>
-            <th class="hide-mobile">J/K</th>
-            <th class="hide-mobile">Kelompok</th>
-            <th class="hide-mobile">Tempat Tugas</th>
-            <th>Aksi</th>
-          </tr></thead>
+          <thead id="kpThead"></thead>
           <tbody id="kpTbody"></tbody>
         </table>
       </div>
@@ -272,7 +263,20 @@ function renderKPTable() {
   document.getElementById('kpCount').textContent = `${total} pegawai`;
 
   const tbody = document.getElementById('kpTbody');
-  if (!tbody) return;
+  const thead = document.getElementById('kpThead');
+  if (!tbody || !thead) return;
+
+  thead.innerHTML = `<tr>
+    <th>No</th>
+    <th>Nama</th>
+    <th class="hide-mobile">NIK</th>
+    <th class="hide-mobile">Status</th>
+    ${kpFilterStatus === 'Berhenti' || RESIGNED_STATUSES.includes(kpFilterStatus) ? '<th class="hide-mobile">Tanggal Berhenti</th>' : ''}
+    <th class="hide-mobile">J/K</th>
+    <th class="hide-mobile">Kelompok</th>
+    <th class="hide-mobile">Tempat Tugas</th>
+    <th>Aksi</th>
+  </tr>`;
 
   tbody.innerHTML = paged.map((p, i) => `
     <tr>
@@ -283,6 +287,7 @@ function renderKPTable() {
       </td>
       <td class="text-xs hide-mobile">${escHtml(p.nik)}</td>
       <td class="hide-mobile"><span class="badge ${p.status_pegawai === 'Tetap' ? 'badge-dark' : 'badge-gold'} text-xs">${escHtml(p.status_pegawai)}</span></td>
+      ${kpFilterStatus === 'Berhenti' || RESIGNED_STATUSES.includes(kpFilterStatus) ? '<td class="text-xs hide-mobile">' + escHtml(p.tanggal_berhenti || '-') + '</td>' : ''}
       <td class="hide-mobile"><span class="badge ${p.jk === 'L' ? 'badge-dark' : 'badge-gold'} text-xs">${p.jk === 'L' ? 'L' : 'P'}</span></td>
       <td class="text-xs hide-mobile">${escHtml(p.kelompok_nakes)}</td>
       <td class="text-xs hide-mobile">${escHtml(p.tempat_tugas)}</td>
