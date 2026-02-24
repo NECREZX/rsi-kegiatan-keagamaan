@@ -5,14 +5,14 @@ let detailTab="info";
 function openDetailDrawer(id){
   const p=DB.pegawai.find(pg=>pg.id===id);
   if(!p){alert("Pegawai tidak ditemukan");return;}
-  const tahunList=DB.tahun||FILTERS.tahun||[];
+  const tahunList=(DB.tahun||FILTERS.tahun||[]).filter(y=>parseInt(y)>=2026);
   if(!detailTahun) detailTahun=tahunList.includes("2026")?"2026":tahunList[tahunList.length-1]||"2026";
   detailTab="info";
   renderDetailDrawer(p);
 }
 
 function renderDetailDrawer(p){
-  const tahunList=DB.tahun||FILTERS.tahun||[];
+  const tahunList=(DB.tahun||FILTERS.tahun||[]).filter(y=>parseInt(y)>=2026);
   const html=`
   <div class="p-5 md:p-6">
     <div class="flex items-center justify-between mb-5">
@@ -54,7 +54,7 @@ function renderDetailContent(p){
 }
 
 function renderDetailInfo(el,p){
-  const tahunList=DB.tahun||[];
+  const tahunList=(DB.tahun||[]).filter(y=>parseInt(y)>=2026);
   const yearSummary=tahunList.map(y=>{const d=getPegawaiData(p,y);return{year:y,...d};});
   el.innerHTML=`
     <div class="space-y-3 mb-5">
@@ -79,7 +79,7 @@ function renderDetailInfo(el,p){
 }
 
 function renderDetailTahunan(el,p){
-  const tahunList=DB.tahun||[];
+  const tahunList=(DB.tahun||[]).filter(y=>parseInt(y)>=2026);
   el.innerHTML=`
     <div class="mb-3"><label class="text-xs font-semibold" style="color:var(--text2)">Tahun</label>
       <select class="select w-full text-sm mt-1" onchange="detailTahun=this.value;renderDetailTahunan(document.getElementById('detailContent'),DB.pegawai.find(pg=>pg.id===${p.id}))">${tahunList.map(v=>`<option value="${v}" ${detailTahun===v?"selected":""}>${v}</option>`).join("")}</select></div>
@@ -102,7 +102,7 @@ function renderDetailTahunan(el,p){
 }
 
 function renderDetailBulanan(el,p){
-  const tahunList=DB.tahun||[];
+  const tahunList=(DB.tahun||[]).filter(y=>parseInt(y)>=2026);
   el.innerHTML=`
     <div class="grid grid-cols-3 gap-2 mb-3">
       <div><label class="text-xs font-semibold" style="color:var(--text2)">Tahun</label>
@@ -169,7 +169,7 @@ function exportDetailPDF(id){
   // Yearly data
   y+=3;doc.setFont("helvetica","bold");doc.setFontSize(10);doc.text("Rekap Aktivitas per Tahun",14,y);y+=5;
   const yearHeaders=[["Tahun","Mengaji","Kajian Fiqih","PHBI","Total"]];
-  const yearRows=(DB.tahun||[]).map(yr=>{const d=getPegawaiData(p,yr);return[yr,d.mengaji,d.fiqih,d.phbi,d.total];});
+  const yearRows=(DB.tahun||[]).filter(y=>parseInt(y)>=2026).map(yr=>{const d=getPegawaiData(p,yr);return[yr,d.mengaji,d.fiqih,d.phbi,d.total];});
   doc.autoTable({head:yearHeaders,body:yearRows,startY:y,styles:{fontSize:8},headStyles:{fillColor:[26,26,46]},columnStyles:{1:{halign:"center"},2:{halign:"center"},3:{halign:"center"},4:{halign:"center",fontStyle:"bold"}}});
 
   // Monthly data for current year
