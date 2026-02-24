@@ -99,10 +99,14 @@ switch ($action) {
 
         if ($updated) {
             file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-            // Update xlsx too
+            // Execute background update instead of blocking
             $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-            $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile) . " 2>&1";
-            shell_exec($cmd);
+            $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
+            if (PHP_OS_FAMILY === 'Windows') {
+                pclose(popen("start /B " . $cmd, "r"));
+            } else {
+                exec($cmd . " > /dev/null 2>&1 &");
+            }
             echo json_encode(['success' => true, 'message' => 'Data berhasil disimpan']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Pegawai tidak ditemukan']);
@@ -133,9 +137,14 @@ switch ($action) {
         $data['pegawai'][] = $newPegawai;
         file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         
+        // Execute background update instead of blocking
         $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile) . " 2>&1";
-        shell_exec($cmd);
+        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
+        if (PHP_OS_FAMILY === 'Windows') {
+            pclose(popen("start /B " . $cmd, "r"));
+        } else {
+            exec($cmd . " > /dev/null 2>&1 &");
+        }
 
         echo json_encode(['success' => true, 'data' => $newPegawai, 'message' => 'Pegawai berhasil ditambahkan']);
         break;
@@ -173,9 +182,14 @@ switch ($action) {
 
         file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         
+        // Execute background update instead of blocking
         $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile) . " 2>&1";
-        shell_exec($cmd);
+        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
+        if (PHP_OS_FAMILY === 'Windows') {
+            pclose(popen("start /B " . $cmd, "r"));
+        } else {
+            exec($cmd . " > /dev/null 2>&1 &");
+        }
 
         echo json_encode(['success' => true, 'message' => 'Data pegawai berhasil diperbarui']);
         break;
@@ -200,9 +214,14 @@ switch ($action) {
 
         file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         
+        // Execute background update instead of blocking
         $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile) . " 2>&1";
-        shell_exec($cmd);
+        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
+        if (PHP_OS_FAMILY === 'Windows') {
+            pclose(popen("start /B " . $cmd, "r"));
+        } else {
+            exec($cmd . " > /dev/null 2>&1 &");
+        }
 
         echo json_encode(['success' => true, 'message' => 'Pegawai berhasil dihapus']);
         break;
