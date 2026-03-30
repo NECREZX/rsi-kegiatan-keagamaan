@@ -21,9 +21,9 @@ define('USERS', [
 // Database / Supabase config
 // Environment variables are prioritized (useful for Vercel)
 define('DB_HOST', getenv('DB_HOST') ?: 'aws-0-ap-southeast-1.pooler.supabase.com');
-define('DB_PORT', getenv('DB_PORT') ?: '6543');
+define('DB_PORT', getenv('DB_PORT') ?: '5432');
 define('DB_NAME', getenv('DB_NAME') ?: 'postgres');
-define('DB_USER', getenv('DB_USER') ?: 'postgres.xxx');
+define('DB_USER', getenv('DB_USER') ?: 'postgres.svglbkidzkcpsugjcjbi');
 define('DB_PASS', getenv('DB_PASS') ?: 'your_password');
 
 function getDB() {
