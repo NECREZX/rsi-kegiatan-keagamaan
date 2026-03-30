@@ -98,7 +98,7 @@ if (file_exists(JSON_DB)) {
             $pParamChunks = array_chunk($pegawaiParams, 1100); // 100 * 11 columns
             
             foreach ($pChunks as $i => $chunkPlaceholders) {
-                $sql = "INSERT INTO pegawai (id, no, nama, nik, status_pegawai, tanggal_berhenti, jk, kelompok_nakes, nama_jabatan, struktur_lini, tempat_tugas) VALUES " . implode(", ", $chunkPlaceholders);
+                $sql = "INSERT INTO pegawai (id, no, nama, nik, status_pegawai, tanggal_berhenti, jk, kelompok_nakes, nama_jabatan, struktur_lini, tempat_tugas) VALUES " . implode(", ", $chunkPlaceholders) . " ON CONFLICT (id) DO NOTHING";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($pParamChunks[$i]);
             }
@@ -109,7 +109,7 @@ if (file_exists(JSON_DB)) {
                 $aParamChunks = array_chunk($aktivitasParams, 1800); // 300 * 6 columns
                 
                 foreach ($aChunks as $i => $chunkPlaceholders) {
-                    $sql = "INSERT INTO aktivitas (pegawai_id, tahun, bulan, mengaji, kajian_fiqih, phbi) VALUES " . implode(", ", $chunkPlaceholders);
+                    $sql = "INSERT INTO aktivitas (pegawai_id, tahun, bulan, mengaji, kajian_fiqih, phbi) VALUES " . implode(", ", $chunkPlaceholders) . " ON CONFLICT (pegawai_id, tahun, bulan) DO NOTHING";
                     $stmt = $pdo->prepare($sql);
                     $stmt->execute($aParamChunks[$i]);
                 }
