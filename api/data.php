@@ -6,64 +6,98 @@ header('Access-Control-Allow-Headers: Content-Type');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit(0); }
 
-$dataFile = __DIR__ . '/../data/database.json';
-$xlsxFile = __DIR__ . '/../data/database.xlsx';
+require_once __DIR__ . '/../config.php';
+$pdo = getDB();
 
-function convertXlsxToJson($xlsxFile, $jsonFile) {
-    $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-    $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/convert.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($jsonFile) . " 2>&1";
-    $output = shell_exec($cmd);
-    return file_exists($jsonFile);
-}
+function loadAllData($pdo) {
+    $stmt = $pdo->query("SELECT * FROM pegawai ORDER BY id ASC");
+    $pegawais = $stmt->fetchAll();
 
-function loadData($dataFile, $xlsxFile) {
-    if (!file_exists($dataFile) || (file_exists($xlsxFile) && filemtime($xlsxFile) > filemtime($dataFile))) {
-        convertXlsxToJson($xlsxFile, $dataFile);
+    $stmtAct = $pdo->query("SELECT * FROM aktivitas");
+    $aktivitas = $stmtAct->fetchAll();
+
+    $actMap = [];
+    foreach ($aktivitas as $act) {
+        $pid = $act['pegawai_id'];
+        $th = $act['tahun'];
+        $bl = $act['bulan'];
+        if (!isset($actMap[$pid])) $actMap[$pid] = [];
+        if (!isset($actMap[$pid][$th])) $actMap[$pid][$th] = [];
+        $actMap[$pid][$th][$bl] = [
+            'mengaji' => (int)$act['mengaji'],
+            'kajian_fiqih' => (int)$act['kajian_fiqih'],
+            'phbi' => (int)$act['phbi']
+        ];
     }
-    if (file_exists($dataFile)) {
-        return json_decode(file_get_contents($dataFile), true);
+
+    foreach ($pegawais as &$p) {
+        $p['id'] = (int)$p['id'];
+        $p['no'] = (int)$p['no'];
+        $p['data'] = isset($actMap[$p['id']]) ? $actMap[$p['id']] : [];
     }
-    return ['pegawai' => []];
+    unset($p);
+
+    return ['pegawai' => $pegawais];
 }
 
 $action = $_GET['action'] ?? 'get_all';
 
 switch ($action) {
     case 'get_all':
-        $data = loadData($dataFile, $xlsxFile);
+        $data = loadAllData($pdo);
         echo json_encode(['success' => true, 'data' => $data]);
         break;
 
     case 'get_filters':
-        $data = loadData($dataFile, $xlsxFile);
-        $pegawai = $data['pegawai'] ?? [];
+        $stmt = $pdo->query("SELECT DISTINCT tempat_tugas FROM pegawai WHERE tempat_tugas IS NOT NULL AND tempat_tugas != '' ORDER BY tempat_tugas");
+        $tempat_tugas = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $stmt = $pdo->query("SELECT DISTINCT struktur_lini FROM pegawai WHERE struktur_lini IS NOT NULL AND struktur_lini != '' ORDER BY struktur_lini");
+        $struktur_lini = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $stmt = $pdo->query("SELECT DISTINCT kelompok_nakes FROM pegawai WHERE kelompok_nakes IS NOT NULL AND kelompok_nakes != '' ORDER BY kelompok_nakes");
+        $kelompok_nakes = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $stmt = $pdo->query("SELECT DISTINCT status_pegawai FROM pegawai WHERE status_pegawai IS NOT NULL AND status_pegawai != '' AND status_pegawai NOT LIKE 'Berhenti - %' ORDER BY status_pegawai");
+        $status_pegawai = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
         $filters = [
-            'tempat_tugas' => array_values(array_unique(array_filter(array_column($pegawai, 'tempat_tugas')))),
-            'struktur_lini' => array_values(array_unique(array_filter(array_column($pegawai, 'struktur_lini')))),
-            'kelompok_nakes' => array_values(array_unique(array_filter(array_column($pegawai, 'kelompok_nakes')))),
-            'status_pegawai' => array_values(array_unique(array_filter(array_column($pegawai, 'status_pegawai'), function($s) {
-                return $s && strpos($s, 'Berhenti - ') !== 0;
-            }))),
-            // Updated to be 2026-2028 range as requested
+            'tempat_tugas' => $tempat_tugas,
+            'struktur_lini' => $struktur_lini,
+            'kelompok_nakes' => $kelompok_nakes,
+            'status_pegawai' => $status_pegawai,
             'tahun' => ['2026', '2027', '2028'],
         ];
-        sort($filters['tempat_tugas']);
-        sort($filters['struktur_lini']);
-        sort($filters['kelompok_nakes']);
-        sort($filters['status_pegawai']);
         echo json_encode(['success' => true, 'data' => $filters]);
         break;
 
     case 'get_pegawai':
         $id = $_GET['id'] ?? null;
         if (!$id) { echo json_encode(['success' => false, 'message' => 'ID tidak ditemukan']); break; }
-        $data = loadData($dataFile, $xlsxFile);
-        $found = null;
-        foreach ($data['pegawai'] as $p) {
-            if ($p['id'] == $id) { $found = $p; break; }
-        }
-        if ($found) {
-            echo json_encode(['success' => true, 'data' => $found]);
+        
+        $stmt = $pdo->prepare("SELECT * FROM pegawai WHERE id = ?");
+        $stmt->execute([$id]);
+        $pegawai = $stmt->fetch();
+        
+        if ($pegawai) {
+            $pegawai['id'] = (int)$pegawai['id'];
+            $pegawai['no'] = (int)$pegawai['no'];
+            
+            $stmtAct = $pdo->prepare("SELECT * FROM aktivitas WHERE pegawai_id = ?");
+            $stmtAct->execute([$id]);
+            $aktivitas = $stmtAct->fetchAll();
+            
+            $data = [];
+            foreach ($aktivitas as $act) {
+                if (!isset($data[$act['tahun']])) $data[$act['tahun']] = [];
+                $data[$act['tahun']][$act['bulan']] = [
+                    'mengaji' => (int)$act['mengaji'],
+                    'kajian_fiqih' => (int)$act['kajian_fiqih'],
+                    'phbi' => (int)$act['phbi']
+                ];
+            }
+            $pegawai['data'] = $data;
+            echo json_encode(['success' => true, 'data' => $pegawai]);
         } else {
             echo json_encode(['success' => false, 'message' => 'Pegawai tidak ditemukan']);
         }
@@ -72,7 +106,6 @@ switch ($action) {
     case 'save_aktivitas':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') { echo json_encode(['success' => false, 'message' => 'Method not allowed']); break; }
         $input = json_decode(file_get_contents('php://input'), true);
-        $data = loadData($dataFile, $xlsxFile);
 
         $id = $input['id'] ?? null;
         $tahun = $input['tahun'] ?? null;
@@ -84,152 +117,134 @@ switch ($action) {
             break;
         }
 
-        $updated = false;
-        foreach ($data['pegawai'] as &$p) {
-            if ($p['id'] == $id) {
-                if (!isset($p['data'][$tahun])) $p['data'][$tahun] = [];
-                if (!isset($p['data'][$tahun][$bulan])) $p['data'][$tahun][$bulan] = [];
-                $p['data'][$tahun][$bulan]['mengaji'] = intval($aktivitas['mengaji'] ?? 0);
-                $p['data'][$tahun][$bulan]['kajian_fiqih'] = intval($aktivitas['kajian_fiqih'] ?? 0);
-                $p['data'][$tahun][$bulan]['phbi'] = intval($aktivitas['phbi'] ?? 0);
-                $updated = true;
-                break;
-            }
-        }
+        $mengaji = intval($aktivitas['mengaji'] ?? 0);
+        $kajian_fiqih = intval($aktivitas['kajian_fiqih'] ?? 0);
+        $phbi = intval($aktivitas['phbi'] ?? 0);
 
-        if ($updated) {
-            file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-            // Execute background update instead of blocking
-            $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-            $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
-            if (PHP_OS_FAMILY === 'Windows') {
-                pclose(popen("start /B " . $cmd, "r"));
-            } else {
-                exec($cmd . " > /dev/null 2>&1 &");
-            }
+        $stmt = $pdo->prepare("INSERT INTO aktivitas (pegawai_id, tahun, bulan, mengaji, kajian_fiqih, phbi) 
+            VALUES (?, ?, ?, ?, ?, ?) 
+            ON CONFLICT (pegawai_id, tahun, bulan) 
+            DO UPDATE SET mengaji = EXCLUDED.mengaji, kajian_fiqih = EXCLUDED.kajian_fiqih, phbi = EXCLUDED.phbi");
+        
+        try {
+            $stmt->execute([$id, $tahun, $bulan, $mengaji, $kajian_fiqih, $phbi]);
             echo json_encode(['success' => true, 'message' => 'Data berhasil disimpan']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Pegawai tidak ditemukan']);
+        } catch (Exception $e) {
+             echo json_encode(['success' => false, 'message' => 'Gagal menyimpan: ' . $e->getMessage()]);
         }
         break;
 
     case 'add_pegawai':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') { echo json_encode(['success' => false, 'message' => 'Method not allowed']); break; }
         $input = json_decode(file_get_contents('php://input'), true);
-        $data = loadData($dataFile, $xlsxFile);
-
-        $newId = count($data['pegawai']) > 0 ? max(array_column($data['pegawai'], 'id')) + 1 : 1;
-        $newPegawai = [
-            'id' => $newId,
-            'no' => $newId,
-            'nama' => $input['nama'] ?? '',
-            'nik' => $input['nik'] ?? '',
-            'status_pegawai' => $input['status_pegawai'] ?? '',
-            'tanggal_berhenti' => $input['tanggal_berhenti'] ?? null, // New field
-            'jk' => $input['jk'] ?? '',
-            'kelompok_nakes' => $input['kelompok_nakes'] ?? '',
-            'nama_jabatan' => $input['nama_jabatan'] ?? '',
-            'struktur_lini' => $input['struktur_lini'] ?? '',
-            'tempat_tugas' => $input['tempat_tugas'] ?? '',
-            'data' => [],
-        ];
-
-        $data['pegawai'][] = $newPegawai;
-        file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         
-        // Execute background update instead of blocking
-        $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
-        if (PHP_OS_FAMILY === 'Windows') {
-            pclose(popen("start /B " . $cmd, "r"));
-        } else {
-            exec($cmd . " > /dev/null 2>&1 &");
-        }
+        $stmtMax = $pdo->query("SELECT MAX(no) as max_no FROM pegawai");
+        $maxNoResult = $stmtMax->fetch();
+        $newNo = intval($maxNoResult['max_no']) + 1;
 
-        echo json_encode(['success' => true, 'data' => $newPegawai, 'message' => 'Pegawai berhasil ditambahkan']);
+        $stmt = $pdo->prepare("INSERT INTO pegawai (no, nama, nik, status_pegawai, tanggal_berhenti, jk, kelompok_nakes, nama_jabatan, struktur_lini, tempat_tugas) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id");
+        
+        $tanggal_berhenti = !empty($input['tanggal_berhenti']) ? $input['tanggal_berhenti'] : null;
+        
+        try {
+            $stmt->execute([
+                $newNo,
+                $input['nama'] ?? '',
+                $input['nik'] ?? '',
+                $input['status_pegawai'] ?? '',
+                $tanggal_berhenti,
+                $input['jk'] ?? '',
+                $input['kelompok_nakes'] ?? '',
+                $input['nama_jabatan'] ?? '',
+                $input['struktur_lini'] ?? '',
+                $input['tempat_tugas'] ?? ''
+            ]);
+            
+            $newId = $stmt->fetchColumn();
+            
+            $newPegawai = [
+                'id' => (int)$newId,
+                'no' => $newNo,
+                'nama' => $input['nama'] ?? '',
+                'nik' => $input['nik'] ?? '',
+                'status_pegawai' => $input['status_pegawai'] ?? '',
+                'tanggal_berhenti' => $tanggal_berhenti,
+                'jk' => $input['jk'] ?? '',
+                'kelompok_nakes' => $input['kelompok_nakes'] ?? '',
+                'nama_jabatan' => $input['nama_jabatan'] ?? '',
+                'struktur_lini' => $input['struktur_lini'] ?? '',
+                'tempat_tugas' => $input['tempat_tugas'] ?? '',
+                'data' => []
+            ];
+
+            echo json_encode(['success' => true, 'data' => $newPegawai, 'message' => 'Pegawai berhasil ditambahkan']);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => 'Gagal menambahkan: ' . $e->getMessage()]);
+        }
         break;
 
     case 'edit_pegawai':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') { echo json_encode(['success' => false, 'message' => 'Method not allowed']); break; }
         $input = json_decode(file_get_contents('php://input'), true);
-        $data = loadData($dataFile, $xlsxFile);
-
+        
         $id = $input['id'] ?? null;
         if (!$id) { echo json_encode(['success' => false, 'message' => 'ID pegawai diperlukan']); break; }
 
-        $found = false;
-        foreach ($data['pegawai'] as &$p) {
-            if ($p['id'] == $id) {
-                $p['nama'] = $input['nama'] ?? $p['nama'];
-                $p['nik'] = $input['nik'] ?? $p['nik'];
-                $p['status_pegawai'] = $input['status_pegawai'] ?? $p['status_pegawai'];
-                // Only update if provided, allow null to clear? Usually sent as string.
-                if (array_key_exists('tanggal_berhenti', $input)) {
-                    $p['tanggal_berhenti'] = $input['tanggal_berhenti'];
-                }
-                $p['jk'] = $input['jk'] ?? $p['jk'];
-                $p['kelompok_nakes'] = $input['kelompok_nakes'] ?? $p['kelompok_nakes'];
-                $p['nama_jabatan'] = $input['nama_jabatan'] ?? $p['nama_jabatan'];
-                $p['struktur_lini'] = $input['struktur_lini'] ?? $p['struktur_lini'];
-                $p['tempat_tugas'] = $input['tempat_tugas'] ?? $p['tempat_tugas'];
-                $found = true;
-                break;
+        $updates = [];
+        $params = [];
+        
+        $allowedFields = ['nama', 'nik', 'status_pegawai', 'tanggal_berhenti', 'jk', 'kelompok_nakes', 'nama_jabatan', 'struktur_lini', 'tempat_tugas'];
+        foreach ($allowedFields as $field) {
+            if (array_key_exists($field, $input)) {
+                $updates[] = "$field = ?";
+                $params[] = $input[$field] !== '' ? $input[$field] : null; 
             }
         }
-        unset($p);
 
-        if (!$found) { echo json_encode(['success' => false, 'message' => 'Pegawai tidak ditemukan']); break; }
-
-        file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        
-        // Execute background update instead of blocking
-        $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
-        if (PHP_OS_FAMILY === 'Windows') {
-            pclose(popen("start /B " . $cmd, "r"));
-        } else {
-            exec($cmd . " > /dev/null 2>&1 &");
+        if (count($updates) === 0) {
+            echo json_encode(['success' => true, 'message' => 'Tidak ada perubahan']);
+            break;
         }
 
-        echo json_encode(['success' => true, 'message' => 'Data pegawai berhasil diperbarui']);
+        $params[] = $id;
+
+        $stmt = $pdo->prepare("UPDATE pegawai SET " . implode(", ", $updates) . " WHERE id = ?");
+        try {
+            $stmt->execute($params);
+            if ($stmt->rowCount() > 0) {
+                echo json_encode(['success' => true, 'message' => 'Data pegawai berhasil diperbarui']);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Pegawai tidak ditemukan atau tidak ada yang diubah']);
+            }
+        } catch (Exception $e) {
+             echo json_encode(['success' => false, 'message' => 'Gagal memperbarui: ' . $e->getMessage()]);
+        }
         break;
 
     case 'delete_pegawai':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') { echo json_encode(['success' => false, 'message' => 'Method not allowed']); break; }
         $input = json_decode(file_get_contents('php://input'), true);
-        $data = loadData($dataFile, $xlsxFile);
 
         $id = $input['id'] ?? null;
         if (!$id) { echo json_encode(['success' => false, 'message' => 'ID pegawai diperlukan']); break; }
 
-        $initialCount = count($data['pegawai']);
-        $data['pegawai'] = array_values(array_filter($data['pegawai'], function($p) use ($id) {
-            return $p['id'] != $id;
-        }));
-
-        if (count($data['pegawai']) === $initialCount) {
-            echo json_encode(['success' => false, 'message' => 'Pegawai tidak ditemukan']);
-            break;
+        $stmt = $pdo->prepare("DELETE FROM pegawai WHERE id = ?");
+        try {
+            $stmt->execute([$id]);
+            if ($stmt->rowCount() > 0) {
+                echo json_encode(['success' => true, 'message' => 'Pegawai berhasil dihapus']);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Pegawai tidak ditemukan']);
+            }
+        } catch (Exception $e) {
+             echo json_encode(['success' => false, 'message' => 'Gagal menghapus: ' . $e->getMessage()]);
         }
-
-        file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        
-        // Execute background update instead of blocking
-        $pythonCmd = PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3';
-        $cmd = $pythonCmd . " " . escapeshellarg(__DIR__ . '/../includes/update_xlsx.py') . " " . escapeshellarg($xlsxFile) . " " . escapeshellarg($dataFile);
-        if (PHP_OS_FAMILY === 'Windows') {
-            pclose(popen("start /B " . $cmd, "r"));
-        } else {
-            exec($cmd . " > /dev/null 2>&1 &");
-        }
-
-        echo json_encode(['success' => true, 'message' => 'Pegawai berhasil dihapus']);
         break;
 
     case 'delete_aktivitas':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') { echo json_encode(['success' => false, 'message' => 'Method not allowed']); break; }
         $input = json_decode(file_get_contents('php://input'), true);
-        $data = loadData($dataFile, $xlsxFile);
 
         $id = $input['id'] ?? null;
         $tahun = $input['tahun'] ?? null;
@@ -240,101 +255,83 @@ switch ($action) {
             break;
         }
 
-        $deleted = false;
-        foreach ($data['pegawai'] as &$p) {
-            if ($p['id'] == $id) {
-                if (isset($p['data'][$tahun][$bulan])) {
-                    unset($p['data'][$tahun][$bulan]);
-                    // Clean up empty year
-                    if (empty($p['data'][$tahun])) {
-                        unset($p['data'][$tahun]);
-                    }
-                    $deleted = true;
-                }
-                break;
+        $stmt = $pdo->prepare("DELETE FROM aktivitas WHERE pegawai_id = ? AND tahun = ? AND bulan = ?");
+        try {
+            $stmt->execute([$id, $tahun, $bulan]);
+            if ($stmt->rowCount() > 0) {
+                echo json_encode(['success' => true, 'message' => 'Data aktivitas berhasil dihapus']);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Data tidak ditemukan']);
             }
-        }
-
-        if ($deleted) {
-            file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-            echo json_encode(['success' => true, 'message' => 'Data aktivitas berhasil dihapus']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Data tidak ditemukan']);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => 'Gagal menghapus: ' . $e->getMessage()]);
         }
         break;
 
     case 'get_aktivitas_list':
-        $data = loadData($dataFile, $xlsxFile);
         $tahun = $_GET['tahun'] ?? null;
         $bulan = $_GET['bulan'] ?? null;
         $search = $_GET['search'] ?? '';
         $tempat = $_GET['tempat_tugas'] ?? '';
 
-        $result = [];
-        foreach ($data['pegawai'] as $p) {
-            // Filter by tempat tugas
-            if ($tempat && $p['tempat_tugas'] !== $tempat) continue;
-            // Exclude Resigned
-            if (strpos($p['status_pegawai'] ?? '', 'Berhenti') === 0) continue;
-            // Filter by search
-            if ($search && stripos($p['nama'], $search) === false && stripos((string)$p['nik'], $search) === false) continue;
+        $query = "SELECT p.id, p.nama, p.nik, p.tempat_tugas, a.tahun, a.bulan, a.mengaji, a.kajian_fiqih, a.phbi 
+                  FROM pegawai p JOIN aktivitas a ON p.id = a.pegawai_id 
+                  WHERE p.status_pegawai NOT LIKE 'Berhenti - %'";
 
-            if ($tahun && $bulan) {
-                // Specific month
-                $d = $p['data'][$tahun][$bulan] ?? null;
-                if ($d) {
-                    $mengaji = intval($d['mengaji'] ?? 0);
-                    $fiqih = intval($d['kajian_fiqih'] ?? 0);
-                    $phbi = intval($d['phbi'] ?? 0);
-                    if ($mengaji + $fiqih + $phbi > 0) {
-                        $result[] = [
-                            'id' => $p['id'],
-                            'nama' => $p['nama'],
-                            'nik' => $p['nik'],
-                            'tempat_tugas' => $p['tempat_tugas'],
-                            'tahun' => $tahun,
-                            'bulan' => $bulan,
-                            'mengaji' => $mengaji,
-                            'kajian_fiqih' => $fiqih,
-                            'phbi' => $phbi,
-                            'total' => $mengaji + $fiqih + $phbi,
-                        ];
-                    }
-                }
-            } else if ($tahun) {
-                // All months in a year
-                $yearData = $p['data'][$tahun] ?? [];
-                foreach ($yearData as $bln => $d) {
-                    $mengaji = intval($d['mengaji'] ?? 0);
-                    $fiqih = intval($d['kajian_fiqih'] ?? 0);
-                    $phbi = intval($d['phbi'] ?? 0);
-                    if ($mengaji + $fiqih + $phbi > 0) {
-                        $result[] = [
-                            'id' => $p['id'],
-                            'nama' => $p['nama'],
-                            'nik' => $p['nik'],
-                            'tempat_tugas' => $p['tempat_tugas'],
-                            'tahun' => $tahun,
-                            'bulan' => $bln,
-                            'mengaji' => $mengaji,
-                            'kajian_fiqih' => $fiqih,
-                            'phbi' => $phbi,
-                            'total' => $mengaji + $fiqih + $phbi,
-                        ];
-                    }
-                }
+        $params = [];
+
+        if ($tempat) {
+            $query .= " AND p.tempat_tugas = ?";
+            $params[] = $tempat;
+        }
+
+        if ($search) {
+            $query .= " AND (p.nama ILIKE ? OR p.nik ILIKE ?)";
+            $params[] = "%$search%";
+            $params[] = "%$search%";
+        }
+
+        if ($tahun) {
+            $query .= " AND a.tahun = ?";
+            $params[] = $tahun;
+        }
+
+        if ($bulan) {
+            $query .= " AND a.bulan = ?";
+            $params[] = $bulan;
+        }
+
+        $stmt = $pdo->prepare($query);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $mengaji = (int)$row['mengaji'];
+            $fiqih = (int)$row['kajian_fiqih'];
+            $phbi = (int)$row['phbi'];
+            if ($mengaji + $fiqih + $phbi > 0) {
+                $result[] = [
+                    'id' => $row['id'],
+                    'nama' => $row['nama'],
+                    'nik' => $row['nik'],
+                    'tempat_tugas' => $row['tempat_tugas'],
+                    'tahun' => $row['tahun'],
+                    'bulan' => $row['bulan'],
+                    'mengaji' => $mengaji,
+                    'kajian_fiqih' => $fiqih,
+                    'phbi' => $phbi,
+                    'total' => $mengaji + $fiqih + $phbi,
+                ];
             }
         }
 
-        // Sort by nama
         usort($result, function($a, $b) { return strcmp($a['nama'], $b['nama']); });
         echo json_encode(['success' => true, 'data' => $result, 'total' => count($result)]);
         break;
 
     case 'reload':
-        if (file_exists($dataFile)) unlink($dataFile);
-        convertXlsxToJson($xlsxFile, $dataFile);
-        echo json_encode(['success' => true, 'message' => 'Data berhasil di-reload dari Excel']);
+        echo json_encode(['success' => false, 'message' => 'Data kini disimpan di Database PostgreSQL, tidak perlu reload dari Excel.']);
         break;
 
     default:
