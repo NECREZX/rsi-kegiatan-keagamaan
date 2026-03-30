@@ -48,15 +48,19 @@ if (file_exists(JSON_DB)) {
     if (isset($data['pegawai']) && count($data['pegawai']) > 0) {
         $pdo->beginTransaction();
         try {
-            // Delete existing to prevent duplicate when re-running
             $pdo->exec("DELETE FROM pegawai");
             
-            $stmtPegawai = $pdo->prepare("INSERT INTO pegawai (id, no, nama, nik, status_pegawai, tanggal_berhenti, jk, kelompok_nakes, nama_jabatan, struktur_lini, tempat_tugas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmtAktivitas = $pdo->prepare("INSERT INTO aktivitas (pegawai_id, tahun, bulan, mengaji, kajian_fiqih, phbi) VALUES (?, ?, ?, ?, ?, ?)");
+            $pegawaiParams = [];
+            $pegawaiPlaceholders = [];
+            
+            $aktivitasParams = [];
+            $aktivitasPlaceholders = [];
             
             foreach ($data['pegawai'] as $p) {
                 $tanggal_berhenti = !empty($p['tanggal_berhenti']) ? $p['tanggal_berhenti'] : null;
-                $stmtPegawai->execute([
+                
+                $pegawaiPlaceholders[] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                array_push($pegawaiParams, 
                     $p['id'],
                     $p['no'] ?? $p['id'],
                     $p['nama'] ?? '',
@@ -68,31 +72,53 @@ if (file_exists(JSON_DB)) {
                     $p['nama_jabatan'] ?? '',
                     $p['struktur_lini'] ?? '',
                     $p['tempat_tugas'] ?? ''
-                ]);
+                );
                 
                 if (isset($p['data']) && is_array($p['data'])) {
                     foreach ($p['data'] as $tahun => $bulanData) {
                         if (is_array($bulanData)) {
                             foreach ($bulanData as $bulan => $act) {
-                                $stmtAktivitas->execute([
+                                $aktivitasPlaceholders[] = "(?, ?, ?, ?, ?, ?)";
+                                array_push($aktivitasParams,
                                     $p['id'],
                                     $tahun,
                                     $bulan,
                                     intval($act['mengaji'] ?? 0),
                                     intval($act['kajian_fiqih'] ?? 0),
                                     intval($act['phbi'] ?? 0)
-                                ]);
+                                );
                             }
                         }
                     }
                 }
             }
             
-            // Update the sequence for PostgreSQL after manual ID insertion
+            // Chunked Bulk Insert Pegawai (100 at a time)
+            $pChunks = array_chunk($pegawaiPlaceholders, 100);
+            $pParamChunks = array_chunk($pegawaiParams, 1100); // 100 * 11 columns
+            
+            foreach ($pChunks as $i => $chunkPlaceholders) {
+                $sql = "INSERT INTO pegawai (id, no, nama, nik, status_pegawai, tanggal_berhenti, jk, kelompok_nakes, nama_jabatan, struktur_lini, tempat_tugas) VALUES " . implode(", ", $chunkPlaceholders);
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($pParamChunks[$i]);
+            }
+            
+            // Chunked Bulk Insert Aktivitas (300 at a time)
+            if (count($aktivitasPlaceholders) > 0) {
+                $aChunks = array_chunk($aktivitasPlaceholders, 300);
+                $aParamChunks = array_chunk($aktivitasParams, 1800); // 300 * 6 columns
+                
+                foreach ($aChunks as $i => $chunkPlaceholders) {
+                    $sql = "INSERT INTO aktivitas (pegawai_id, tahun, bulan, mengaji, kajian_fiqih, phbi) VALUES " . implode(", ", $chunkPlaceholders);
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute($aParamChunks[$i]);
+                }
+            }
+            
             $pdo->exec("SELECT setval(pg_get_serial_sequence('pegawai', 'id'), coalesce(max(id),0) + 1, false) FROM pegawai");
 
             $pdo->commit();
-            echo json_encode(['success' => true, 'message' => 'Database configured and ' . count($data['pegawai']) . ' records migrated.']);
+            echo json_encode(['success' => true, 'message' => 'Database configured and ' . count($data['pegawai']) . ' records migrated incredibly fast.']);
         } catch (Exception $e) {
             $pdo->rollBack();
             echo json_encode(['success' => false, 'message' => 'Migration failed: ' . $e->getMessage()]);
